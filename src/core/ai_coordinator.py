@@ -8,11 +8,12 @@ AI協調器 - 多AI協作開發平台的核心組件
 """
 
 import json
-import os
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+
+from utils.error_handler import ErrorHandler
 
 
 class AICoordinator:
@@ -47,8 +48,11 @@ class AICoordinator:
         
         # 設置日誌
         self._setup_logging()
-        
+
         logger.info(f"AICoordinator initialized for project: {self.project_path}")
+
+        # 統一的錯誤處理
+        self.error_handler = ErrorHandler(logger=logger)
     
     def _ensure_directories(self):
         """確保必要的目錄存在"""
@@ -83,16 +87,25 @@ class AICoordinator:
             try:
                 from .event_recorder import EventRecorder
                 self.event_recorder = EventRecorder(self.data_path)
+                self.error_handler.bind_event_recorder(self.event_recorder)
             except ImportError:
                 logger.warning("EventRecorder not available, events won't be persisted")
+                self.event_recorder = None
+            except Exception as e:
+                context = {'subsystem': 'event_recorder', 'data_path': str(self.data_path)}
+                self.error_handler.log_error_with_context(e, context)
                 self.event_recorder = None
         
         if self.api_clients is None:
             try:
                 from ..ai_services.api_clients import AIAPIClients
-                self.api_clients = AIAPIClients()
+                self.api_clients = AIAPIClients(error_handler=self.error_handler)
             except ImportError:
                 logger.error("AI API clients not available")
+                self.api_clients = None
+            except Exception as e:
+                context = {'subsystem': 'api_clients'}
+                self.error_handler.log_error_with_context(e, context)
                 self.api_clients = None
     
     async def chat_with_ai(self, ai_config: Dict[str, str], message: str, 
@@ -130,8 +143,20 @@ class AICoordinator:
             return result
             
         except Exception as e:
-            logger.error(f"Error in chat_with_ai: {str(e)}")
-            return self._error_response(str(e), ai_config)
+            context = {
+                'ai_config': ai_config,
+                'message_preview': message[:200],
+                'custom_role_provided': custom_role is not None
+            }
+            error_response = self._error_response(str(e), ai_config)
+            self.error_handler.log_error_with_context(e, context)
+            return self.error_handler.graceful_degradation(
+                'chat_with_ai',
+                error_response,
+                reason='Failed to complete AI conversation',
+                context=context,
+                record_event=False
+            )
     
     def _build_system_prompt(self, ai_config: Dict[str, str], custom_role: str = None) -> str:
         """建構系統prompt"""
@@ -212,10 +237,21 @@ class AICoordinator:
                 self.event_recorder.append_work_report(result)
             
         except Exception as e:
-            logger.warning(f"Error processing AI response: {str(e)}")
-            result['processing_status'] = 'partial_failure'
-            result['processing_error'] = str(e)
-        
+            context = {
+                'user_message_preview': user_message[:200],
+                'ai_role': ai_config.get('role'),
+                'provider': ai_config.get('provider')
+            }
+            fallback = dict(result)
+            fallback['processing_status'] = 'partial_failure'
+            fallback['processing_error'] = str(e)
+            return self.error_handler.handle_parsing_failure(
+                'ai_response_processing',
+                e,
+                fallback_value=fallback,
+                context=context
+            )
+
         return result
     
     def _is_programming_role(self, role: str) -> bool:
@@ -242,8 +278,17 @@ class AICoordinator:
             return report
             
         except Exception as e:
-            logger.error(f"Error extracting work report: {str(e)}")
-            return None
+            context = {
+                'user_message_preview': user_message[:200],
+                'ai_role': ai_config.get('role'),
+                'provider': ai_config.get('provider')
+            }
+            return self.error_handler.handle_parsing_failure(
+                'work_report_extraction',
+                e,
+                fallback_value=None,
+                context=context
+            )
     
     def _detect_task_type(self, response: str) -> str:
         """簡單的任務類型檢測"""
@@ -324,8 +369,20 @@ class AICoordinator:
             }
             
         except Exception as e:
-            logger.error(f"Error switching AI role: {str(e)}")
-            return {'status': 'error', 'error': str(e)}
+            context = {
+                'new_ai_config': new_ai_config,
+                'handover_context': handover_context,
+                'previous_ai_config': self.current_ai_config
+            }
+            fallback = {'status': 'error', 'error': str(e)}
+            self.error_handler.log_error_with_context(e, context)
+            return self.error_handler.graceful_degradation(
+                'switch_ai_role',
+                fallback,
+                reason='Failed to switch AI role',
+                context=context,
+                record_event=False
+            )
     
     def get_project_status(self) -> Dict[str, Any]:
         """獲取當前專案狀態摘要"""
@@ -356,8 +413,15 @@ class AICoordinator:
             return status
             
         except Exception as e:
-            logger.error(f"Error getting project status: {str(e)}")
-            return {'error': str(e)}
+            context = {'current_ai_config': self.current_ai_config}
+            self.error_handler.log_error_with_context(e, context)
+            return self.error_handler.graceful_degradation(
+                'get_project_status',
+                {'error': str(e)},
+                reason='Failed to build project status snapshot',
+                context=context,
+                record_event=False
+            )
     
     def validate_linus_compliance(self, work_report: Dict[str, Any]) -> Dict[str, Any]:
         """檢查工作報告是否符合Linus原則"""

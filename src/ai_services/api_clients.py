@@ -12,9 +12,10 @@ import json
 import logging
 import asyncio
 import aiohttp
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime
+from typing import Dict, List, Optional, Any
 import time
+
+from utils.error_handler import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class AIAPIClients:
     4. API錯誤處理和重試
     """
     
-    def __init__(self):
+    def __init__(self, error_handler: Optional[ErrorHandler] = None):
         # API金鑰從環境變數載入
         self.api_keys = {
             'openai': os.getenv('OPENAI_API_KEY'),
@@ -54,6 +55,9 @@ class AIAPIClients:
         
         # 會話管理
         self.session = None
+
+        # 統一錯誤處理
+        self.error_handler = error_handler
         
         logger.info("AIAPIClients initialized")
     
@@ -76,7 +80,14 @@ class AIAPIClients:
                          temperature: float = 0.7, **kwargs) -> str:
         """調用OpenAI API"""
         if not self.api_keys['openai']:
-            raise Exception("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
+            error = Exception("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
+            if self.error_handler:
+                return self.error_handler.handle_api_failure(
+                    'openai',
+                    error,
+                    context={'stage': 'api_key_validation'}
+                )
+            raise error
         
         headers = {
             'Authorization': f"Bearer {self.api_keys['openai']}",
@@ -96,7 +107,14 @@ class AIAPIClients:
                             temperature: float = 0.7, **kwargs) -> str:
         """調用Anthropic API"""
         if not self.api_keys['anthropic']:
-            raise Exception("Anthropic API key not found. Please set ANTHROPIC_API_KEY environment variable.")
+            error = Exception("Anthropic API key not found. Please set ANTHROPIC_API_KEY environment variable.")
+            if self.error_handler:
+                return self.error_handler.handle_api_failure(
+                    'anthropic',
+                    error,
+                    context={'stage': 'api_key_validation'}
+                )
+            raise error
         
         # Anthropic API格式轉換
         system_message = ""
@@ -133,7 +151,14 @@ class AIAPIClients:
                       temperature: float = 0.7, **kwargs) -> str:
         """調用xAI API"""
         if not self.api_keys['xai']:
-            raise Exception("xAI API key not found. Please set XAI_API_KEY environment variable.")
+            error = Exception("xAI API key not found. Please set XAI_API_KEY environment variable.")
+            if self.error_handler:
+                return self.error_handler.handle_api_failure(
+                    'xai',
+                    error,
+                    context={'stage': 'api_key_validation'}
+                )
+            raise error
         
         headers = {
             'Authorization': f"Bearer {self.api_keys['xai']}",
@@ -153,7 +178,14 @@ class AIAPIClients:
                          temperature: float = 0.7, **kwargs) -> str:
         """調用Google AI API"""
         if not self.api_keys['google']:
-            raise Exception("Google AI API key not found. Please set GOOGLE_AI_KEY environment variable.")
+            error = Exception("Google AI API key not found. Please set GOOGLE_AI_KEY environment variable.")
+            if self.error_handler:
+                return self.error_handler.handle_api_failure(
+                    'google',
+                    error,
+                    context={'stage': 'api_key_validation'}
+                )
+            raise error
         
         # Google AI API格式轉換
         contents = []
@@ -193,24 +225,24 @@ class AIAPIClients:
         
         return await self._make_request('google', headers, payload, custom_url=api_url)
     
-    async def _make_request(self, provider: str, headers: Dict[str, str], 
+    async def _make_request(self, provider: str, headers: Dict[str, str],
                            payload: Dict[str, Any], custom_url: str = None) -> str:
         """統一的API請求處理"""
         await self._ensure_session()
-        
+
         url = custom_url or self.api_endpoints[provider]
-        
+
         for attempt in range(self.max_retries):
             try:
                 logger.debug(f"Making request to {provider} (attempt {attempt + 1})")
-                
+
                 async with self.session.post(url, headers=headers, json=payload) as response:
                     response_text = await response.text()
-                    
+
                     if response.status == 200:
                         response_data = json.loads(response_text)
                         return self.standardize_response(provider, response_data)
-                    
+
                     elif response.status == 429:  # Rate limit
                         if attempt < self.max_retries - 1:
                             wait_time = self.retry_delay * (2 ** attempt)  # 指數退避
@@ -218,32 +250,59 @@ class AIAPIClients:
                             await asyncio.sleep(wait_time)
                             continue
                         else:
-                            raise Exception(f"Rate limited by {provider} after {self.max_retries} attempts")
-                    
+                            error = Exception(f"Rate limited by {provider} after {self.max_retries} attempts")
+                            if self.error_handler:
+                                return self.error_handler.handle_api_failure(
+                                    provider,
+                                    error,
+                                    context={'attempts': attempt + 1, 'status': response.status}
+                                )
+                            raise error
+
                     elif response.status >= 400:
                         error_info = self._parse_error_response(response_text, provider)
                         raise Exception(f"{provider} API error: {error_info}")
-                    
+
                     else:
                         raise Exception(f"Unexpected response status {response.status} from {provider}")
-            
-            except asyncio.TimeoutError:
+
+            except asyncio.TimeoutError as timeout_error:
                 if attempt < self.max_retries - 1:
                     logger.warning(f"Timeout calling {provider} API, retrying...")
                     await asyncio.sleep(self.retry_delay)
                     continue
                 else:
-                    raise Exception(f"Timeout calling {provider} API after {self.max_retries} attempts")
-            
+                    error = Exception(f"Timeout calling {provider} API after {self.max_retries} attempts")
+                    if self.error_handler:
+                        return self.error_handler.handle_api_failure(
+                            provider,
+                            timeout_error,
+                            context={'attempts': attempt + 1, 'status': 'timeout'}
+                        )
+                    raise error
+
             except Exception as e:
                 if attempt < self.max_retries - 1 and "rate limit" not in str(e).lower():
                     logger.warning(f"Error calling {provider} API: {str(e)}, retrying...")
                     await asyncio.sleep(self.retry_delay)
                     continue
                 else:
+                    if self.error_handler:
+                        return self.error_handler.handle_api_failure(
+                            provider,
+                            e,
+                            context={'attempts': attempt + 1}
+                        )
                     raise
-        
-        raise Exception(f"Failed to call {provider} API after {self.max_retries} attempts")
+
+        final_error = Exception(f"Failed to call {provider} API after {self.max_retries} attempts")
+        if self.error_handler:
+            return self.error_handler.handle_api_failure(
+                provider,
+                final_error,
+                context={'attempts': self.max_retries}
+            )
+        raise final_error
     
     def standardize_response(self, provider: str, raw_response: Dict[str, Any]) -> str:
         """標準化不同供應商的回應格式"""
@@ -375,8 +434,8 @@ class AIAPIClients:
 class SyncAIAPIClients:
     """同步版本的API客戶端包裝器"""
     
-    def __init__(self):
-        self.async_client = AIAPIClients()
+    def __init__(self, error_handler: Optional[ErrorHandler] = None):
+        self.async_client = AIAPIClients(error_handler=error_handler)
     
     def call_openai(self, model: str, messages: List[Dict[str, str]], 
                    temperature: float = 0.7, **kwargs) -> str:

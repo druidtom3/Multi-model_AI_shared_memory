@@ -13,9 +13,10 @@ import logging
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
-from werkzeug.exceptions import BadRequest, InternalServerError
+from werkzeug.exceptions import HTTPException
 
 # 導入核心模組
 import sys
@@ -24,7 +25,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from core.ai_coordinator import AICoordinator
 from core.role_system import RoleSystem
 from core.event_recorder import EventRecorder
-from ai_services.api_clients import AIAPIClients
+from utils.error_handler import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +36,39 @@ app.secret_key = os.getenv('SESSION_SECRET_KEY', 'dev-secret-key-change-in-produ
 # 全局變量
 ai_coordinator = None
 project_path = None
+error_handler: Optional[ErrorHandler] = None
 
 def init_app():
     """初始化應用和核心組件"""
-    global ai_coordinator, project_path
+    global ai_coordinator, project_path, error_handler
     
     # 設置專案路徑
     project_path = Path(__file__).parent.parent.parent
     
     # 初始化AI協調器
     ai_coordinator = AICoordinator(project_path)
+    error_handler = ai_coordinator.error_handler
     
     # 設置日誌
     logging.basicConfig(level=logging.INFO)
-    
+
     logger.info("Flask app initialized")
+
+
+def _log_and_format_error(error: Exception,
+                          context: Optional[Dict[str, Any]] = None,
+                          severity: str = "error") -> Dict[str, Any]:
+    """Helper to log errors via the shared :class:`ErrorHandler`."""
+    if error_handler:
+        return error_handler.log_error_with_context(error, context, severity=severity)
+
+    return {
+        'success': False,
+        'error': str(error),
+        'error_type': type(error).__name__,
+        'timestamp': datetime.now().isoformat(),
+        'context': context or {}
+    }
 
 @app.before_first_request
 def setup():
@@ -79,8 +98,11 @@ def index():
                              api_status=api_status)
         
     except Exception as e:
-        logger.error(f"Error loading index page: {str(e)}")
-        return render_template('error.html', error=str(e)), 500
+        context = {'endpoint': 'index'}
+        error_payload = _log_and_format_error(e, context)
+        return render_template('error.html',
+                               error=error_payload['error'],
+                               error_code=500), 500
 
 @app.route('/chat')
 def chat():
@@ -113,24 +135,40 @@ def chat():
                              current_config=current_config)
         
     except Exception as e:
-        logger.error(f"Error loading chat page: {str(e)}")
-        return render_template('error.html', error=str(e)), 500
+        context = {'endpoint': 'chat'}
+        error_payload = _log_and_format_error(e, context)
+        return render_template('error.html',
+                               error=error_payload['error'],
+                               error_code=500), 500
 
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
     """API端點 - 處理AI聊天請求"""
+    data = None
     try:
         data = request.get_json()
-        
+
         if not data or 'message' not in data:
-            return jsonify({'error': 'Missing message'}), 400
+            context = {'endpoint': 'api_chat', 'reason': 'missing_message'}
+            error_payload = _log_and_format_error(
+                ValueError('Missing message'),
+                context,
+                severity='warning'
+            )
+            return jsonify(error_payload), 400
         
         message = data['message']
         ai_config = data.get('ai_config', ai_coordinator.current_ai_config)
         custom_role = data.get('custom_role')
         
         if not ai_config:
-            return jsonify({'error': 'No AI configuration specified'}), 400
+            context = {'endpoint': 'api_chat', 'reason': 'missing_ai_config'}
+            error_payload = _log_and_format_error(
+                ValueError('No AI configuration specified'),
+                context,
+                severity='warning'
+            )
+            return jsonify(error_payload), 400
         
         # 使用異步調用AI
         loop = asyncio.new_event_loop()
@@ -151,21 +189,28 @@ def api_chat():
             loop.close()
         
     except Exception as e:
-        logger.error(f"Error in chat API: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        context = {
+            'endpoint': 'api_chat',
+            'payload_keys': list(data.keys()) if isinstance(data, dict) else None
+        }
+        error_payload = _log_and_format_error(e, context)
+        return jsonify(error_payload), 500
 
 @app.route('/api/switch-ai', methods=['POST'])
 def api_switch_ai():
     """API端點 - 切換AI配置"""
+    data = None
     try:
         data = request.get_json()
         
         if not data or 'ai_config' not in data:
-            return jsonify({'error': 'Missing AI configuration'}), 400
+            context = {'endpoint': 'api_switch_ai', 'reason': 'missing_ai_config'}
+            error_payload = _log_and_format_error(
+                ValueError('Missing AI configuration'),
+                context,
+                severity='warning'
+            )
+            return jsonify(error_payload), 400
         
         new_config = data['ai_config']
         handover_context = data.get('handover_context')
@@ -179,12 +224,12 @@ def api_switch_ai():
         })
         
     except Exception as e:
-        logger.error(f"Error switching AI: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        context = {
+            'endpoint': 'api_switch_ai',
+            'payload_keys': list(data.keys()) if isinstance(data, dict) else None
+        }
+        error_payload = _log_and_format_error(e, context)
+        return jsonify(error_payload), 500
 
 @app.route('/api/project-status')
 def api_project_status():
@@ -198,12 +243,9 @@ def api_project_status():
         })
         
     except Exception as e:
-        logger.error(f"Error getting project status: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        context = {'endpoint': 'api_project_status'}
+        error_payload = _log_and_format_error(e, context)
+        return jsonify(error_payload), 500
 
 @app.route('/api/events')
 def api_events():
@@ -227,25 +269,38 @@ def api_events():
         })
         
     except Exception as e:
-        logger.error(f"Error getting events: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        context = {
+            'endpoint': 'api_events',
+            'limit': request.args.get('limit'),
+            'types': request.args.getlist('types')
+        }
+        error_payload = _log_and_format_error(e, context)
+        return jsonify(error_payload), 500
 
 @app.route('/api/test-connection', methods=['POST'])
 def api_test_connection():
     """API端點 - 測試AI API連接"""
+    data = None
     try:
         data = request.get_json()
-        provider = data.get('provider')
+        provider = data.get('provider') if isinstance(data, dict) else None
         
         if not provider:
-            return jsonify({'error': 'Missing provider'}), 400
-        
+            context = {'endpoint': 'api_test_connection', 'reason': 'missing_provider'}
+            error_payload = _log_and_format_error(
+                ValueError('Missing provider'),
+                context,
+                severity='warning'
+            )
+            return jsonify(error_payload), 400
+
         if not ai_coordinator.api_clients:
-            return jsonify({'error': 'API clients not initialized'}), 500
+            context = {'endpoint': 'api_test_connection', 'reason': 'api_clients_not_initialized'}
+            error_payload = _log_and_format_error(
+                RuntimeError('API clients not initialized'),
+                context
+            )
+            return jsonify(error_payload), 500
         
         # 使用異步測試連接
         loop = asyncio.new_event_loop()
@@ -266,12 +321,13 @@ def api_test_connection():
             loop.close()
         
     except Exception as e:
-        logger.error(f"Error testing connection: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        context = {
+            'endpoint': 'api_test_connection',
+            'payload_keys': list(data.keys()) if isinstance(data, dict) else None,
+            'provider': data.get('provider') if isinstance(data, dict) else None
+        }
+        error_payload = _log_and_format_error(e, context)
+        return jsonify(error_payload), 500
 
 @app.route('/events')
 def events_page():
@@ -291,8 +347,11 @@ def events_page():
                              recent_events=recent_events)
         
     except Exception as e:
-        logger.error(f"Error loading events page: {str(e)}")
-        return render_template('error.html', error=str(e)), 500
+        context = {'endpoint': 'events_page'}
+        error_payload = _log_and_format_error(e, context)
+        return render_template('error.html',
+                               error=error_payload['error'],
+                               error_code=500), 500
 
 @app.route('/settings')
 def settings_page():
@@ -317,28 +376,45 @@ def settings_page():
                              api_key_status=api_key_status)
         
     except Exception as e:
-        logger.error(f"Error loading settings page: {str(e)}")
-        return render_template('error.html', error=str(e)), 500
+        context = {'endpoint': 'settings_page'}
+        error_payload = _log_and_format_error(e, context)
+        return render_template('error.html',
+                               error=error_payload['error'],
+                               error_code=500), 500
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(error: Exception):
+    """統一處理未捕捉的例外。"""
+    status_code = 500
+    severity = 'error'
+
+    if isinstance(error, HTTPException):
+        status_code = error.code or status_code
+        severity = 'warning' if status_code < 500 else 'error'
+
+    context = {
+        'endpoint': 'global_exception_handler',
+        'path': request.path,
+        'method': request.method,
+        'status_code': status_code
+    }
+
+    payload = _log_and_format_error(error, context, severity=severity)
+
+    if request.path.startswith('/api/'):
+        return jsonify(payload), status_code
+
+    return render_template('error.html',
+                           error=payload['error'],
+                           error_code=status_code), status_code
+
 
 @app.errorhandler(404)
 def page_not_found(e):
     """404錯誤處理"""
-    return render_template('error.html', 
-                         error="頁面不存在", 
+    return render_template('error.html',
+                         error="頁面不存在",
                          error_code=404), 404
-
-@app.errorhandler(500)
-def internal_error(e):
-    """500錯誤處理"""
-    logger.error(f"Internal server error: {str(e)}")
-    return render_template('error.html', 
-                         error="內部伺服器錯誤", 
-                         error_code=500), 500
-
-@app.errorhandler(BadRequest)
-def bad_request(e):
-    """400錯誤處理"""
-    return jsonify({'error': 'Bad Request', 'message': str(e)}), 400
 
 def run_app():
     """運行Flask應用"""
