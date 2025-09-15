@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import asyncio
+import atexit
 from datetime import datetime
 from pathlib import Path
 
@@ -23,8 +24,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from core.ai_coordinator import AICoordinator
 from core.role_system import RoleSystem
-from core.event_recorder import EventRecorder
 from ai_services.api_clients import AIAPIClients
+from monitoring.file_monitor import WorkspaceFileMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +36,42 @@ app.secret_key = os.getenv('SESSION_SECRET_KEY', 'dev-secret-key-change-in-produ
 # 全局變量
 ai_coordinator = None
 project_path = None
+workspace_monitor = None
 
 def init_app():
     """初始化應用和核心組件"""
-    global ai_coordinator, project_path
-    
-    # 設置專案路徑
-    project_path = Path(__file__).parent.parent.parent
-    
-    # 初始化AI協調器
-    ai_coordinator = AICoordinator(project_path)
-    
+    global ai_coordinator, project_path, workspace_monitor
+
+    if project_path is None:
+        # 設置專案路徑
+        project_path = Path(__file__).parent.parent.parent
+
+    # 初始化AI協調器（僅在尚未建立時）
+    if ai_coordinator is None:
+        ai_coordinator = AICoordinator(project_path)
+
     # 設置日誌
     logging.basicConfig(level=logging.INFO)
-    
+
+    # 確保事件記錄器可用
+    event_recorder = ai_coordinator.ensure_event_recorder()
+
+    # 啟動工作區監控
+    if workspace_monitor is None:
+        if event_recorder is None:
+            logger.warning("Workspace file monitor not started: EventRecorder unavailable")
+        else:
+            try:
+                monitor = WorkspaceFileMonitor(
+                    workspace_path=ai_coordinator.workspace_path,
+                    event_recorder=event_recorder,
+                )
+                monitor.start()
+                workspace_monitor = monitor
+                atexit.register(monitor.stop)
+            except Exception as exc:
+                logger.error(f"Failed to start workspace file monitor: {str(exc)}")
+
     logger.info("Flask app initialized")
 
 @app.before_first_request
