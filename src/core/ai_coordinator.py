@@ -14,6 +14,10 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
+from ..ai_services.linus_compliance_checker import (
+    check_compliance as run_linus_compliance_check,
+)
+
 
 class AICoordinator:
     """
@@ -205,7 +209,18 @@ class AICoordinator:
                 work_report = await self._extract_work_report(user_message, ai_response, ai_config)
                 if work_report:
                     result['work_report'] = work_report
-                    result['linus_compliance'] = self._check_linus_compliance(work_report, ai_config)
+                    compliance_result = self._check_linus_compliance(work_report, ai_config)
+                    result['linus_compliance'] = compliance_result
+
+                    if (
+                        self.event_recorder
+                        and compliance_result.get('violations')
+                    ):
+                        for violation in compliance_result['violations']:
+                            self.event_recorder.append_linus_violation(
+                                violation_details=violation,
+                                ai_config=ai_config,
+                            )
             
             # 記錄到事件流
             if self.event_recorder:
@@ -267,17 +282,19 @@ class AICoordinator:
     def _check_linus_compliance(self, work_report: Dict[str, Any], 
                               ai_config: Dict[str, str]) -> Dict[str, Any]:
         """檢查Linus原則合規性（基本版本）"""
-        # 基本的合規性檢查
-        compliance = {
-            'checked': True,
-            'score': 'unknown',
-            'method': 'basic_check',
-            'violations': [],
-            'good_aspects': []
-        }
-        
-        # 這裡會被專門的合規檢查器取代
-        return compliance
+        try:
+            ai_role = (ai_config or {}).get('role') if isinstance(ai_config, dict) else None
+            compliance = run_linus_compliance_check(work_report, ai_role)
+            return compliance
+        except Exception as exc:  # pragma: no cover - 防禦性處理
+            logger.warning(f"Linus compliance check failed: {exc}")
+            return {
+                'checked': False,
+                'error': str(exc),
+                'violations': [],
+                'good_aspects': [],
+                'method': 'rule_based_v1',
+            }
     
     def _get_project_context(self) -> Dict[str, Any]:
         """獲取專案上下文"""
