@@ -1,0 +1,150 @@
+programming_roles:
+  program_manager:
+    title: "Program Manager"
+    specialties: ["專案規劃", "需求分析", "進度控制", "資源協調"]
+    linus_focus: "專案規劃簡潔明確，拒絕過度設計"
+    recommended_providers: ["anthropic", "openai"]
+    typical_tasks: ["需求分析", "專案規劃", "風險評估", "團隊協調"]
+    
+  system_architect:
+    title: "System Architect" 
+    specialties: ["系統架構", "技術選型", "整體設計", "架構審查"]
+    linus_focus: "架構設計消除複雜性，追求簡潔elegance"
+    recommended_providers: ["anthropic", "openai", "google"]
+    typical_tasks: ["架構設計", "技術選型", "系統規劃", "設計審查"]
+    
+  coder_programmer:
+    title: "Coder Programmer"
+    specialties: ["功能實作", "API開發", "程式碼撰寫"]
+    linus_focus: "程式碼簡潔實用，單一職責，避免過度抽象"
+    recommended_providers: ["openai", "anthropic", "xai"]
+    typical_tasks: ["功能開發", "API實作", "程式碼撰寫", "演算法實現"]
+    
+  coder_reviewer:
+    title: "Coder Reviewer"
+    specialties: ["程式碼審查", "品質把關", "重構建議", "best practice"]
+    linus_focus: "嚴格執行簡潔原則，拒絕複雜設計"
+    recommended_providers: ["anthropic", "openai"]
+    typical_tasks: ["程式碼審查", "品質評估", "重構建議", "標準制定"]
+    
+  devops_engineer:
+    title: "DevOps Engineer"
+    specialties: ["部署自動化", "CI/CD", "環境配置", "監控"]
+    linus_focus: "部署流程簡單可靠，避免過度複雜的工具鏈"
+    recommended_providers: ["openai", "google", "anthropic"]
+    typical_tasks: ["部署配置", "CI/CD建立", "監控設置", "基礎設施管理"]
+    
+  qa_engineer:
+    title: "QA Engineer"
+    specialties: ["測試策略", "品質保證", "bug驗證", "測試自動化"]
+    linus_focus: "測試方法簡潔有效，重點測試核心功能"
+    recommended_providers: ["google", "openai", "anthropic"]
+    typical_tasks: ["測試設計", "品質評估", "自動化測試", "缺陷分析"]
+    
+  performance_optimizer:
+    title: "Performance Optimizer"
+    specialties: ["效能分析", "優化建議", "瓶頸識別", "資源使用"]
+    linus_focus: "優化手段簡單直接，避免過早優化"
+    recommended_providers: ["xai", "openai", "google"]
+    typical_tasks: ["效能分析", "瓶頸識別", "優化實施", "監控設置"]
+    
+  technical_writer:
+    title: "Technical Writer"
+    specialties: ["技術文檔", "API文檔", "使用說明", "架構文件"]
+    linus_focus: "文檔簡潔明確，重點突出，易於理解"
+    recommended_providers: ["anthropic", "openai", "google"]
+    typical_tasks: ["技術文檔", "API說明", "使用手冊", "架構說明"]
+
+non_programming_roles:
+  general_assistant:
+    title: "General Assistant"
+    specialties: ["一般問答", "資訊查詢", "常識解答"]
+    recommended_providers: ["anthropic", "openai", "google"]
+    typical_tasks: ["一般問答", "資訊整理", "協助決策", "日常支援"]
+    
+  research_analyst:
+    title: "Research Analyst"
+    specialties: ["資料研究", "事實查核", "趨勢分析"]
+    recommended_providers: ["google", "anthropic", "openai"]
+    typical_tasks: ["資料研究", "市場分析", "趨勢預測", "報告撰寫"]
+    
+  creative_consultant:
+    title: "Creative Consultant"
+    specialties: ["創意發想", "內容創作", "設計建議"]
+    recommended_providers: ["openai", "xai", "anthropic"]
+    typical_tasks: ["創意發想", "內容創作", "設計建議", "創新思維"]
+
+# 角色推薦規則
+role_recommendations:
+  task_mappings:
+    system_design: ["system_architect", "program_manager"]
+    feature_dev: ["coder_programmer", "system_architect"]
+    bug_fix: ["coder_programmer", "coder_reviewer"]
+    code_review: ["coder_reviewer", "system_architect"]
+    refactor: ["coder_reviewer", "coder_programmer"]
+    testing: ["qa_engineer", "coder_programmer"]
+    documentation: ["technical_writer", "system_architect"]
+    performance_optimization: ["performance_optimizer", "system_architect"]
+    deployment: ["devops_engineer", "system_architect"]
+    general: ["general_assistant", "research_analyst"]
+    
+  provider_role_preferences:
+    anthropic:
+      preferred_roles: ["system_architect", "coder_reviewer", "technical_writer"]
+      reason: "擅長系統性思考和詳細分析"
+    openai:
+      preferred_roles: ["coder_programmer", "program_manager", "general_assistant"]
+      reason: "邏輯推理強，程式碼生成能力佳"
+    xai:
+      preferred_roles: ["performance_optimizer", "creative_consultant"]
+      reason: "創新思維，提供另類解法"
+    google:
+      preferred_roles: ["research_analyst", "qa_engineer", "devops_engineer"]
+      reason: "資料處理和分析能力強"
+
+# Linus原則模板
+linus_principles:
+  core_principles:
+    good_taste:
+      description: "好品味原則：讓特殊情況消失"
+      rules:
+        - "優先使用統一的資料結構"
+        - "用策略模式消除if/else分支堆積"
+        - "設計時先問：能否讓這個特殊情況不存在？"
+    never_break_userspace:
+      description: "不破壞既有使用模式"
+      rules:
+        - "API一旦確定，向後相容性神聖不可侵犯"
+        - "配置檔案格式變更必須支援舊版本"
+        - "工作報告格式可擴充，但不能破壞既有欄位"
+    pragmatism:
+      description: "實用主義：解決真實問題"
+      rules:
+        - "拒絕理論完美、實務更複雜的方案"
+        - "優先解決使用者真正遇到的問題"
+        - "不為未來可能的需求過度設計"
+    simplicity:
+      description: "簡潔執念：複雜度的敵人"
+      rules:
+        - "縮排超過3層就完蛋了"
+        - "函數長度≤50行（指標，非教條）"
+        - "命名簡潔：直接表達用途"
+
+# 角色切換建議
+role_transition_rules:
+  natural_flows:
+    - from: "program_manager"
+      to: "system_architect"
+      trigger: "需求分析完成，開始架構設計"
+    - from: "system_architect"
+      to: "coder_programmer"
+      trigger: "架構設計確認，開始功能實作"
+    - from: "coder_programmer"
+      to: "coder_reviewer"
+      trigger: "程式碼實作完成，需要審查"
+    - from: "coder_reviewer"
+      to: "qa_engineer"
+      trigger: "程式碼審查通過，進入測試階段"
+    - from: "qa_engineer"
+      to: "devops_engineer"
+      trigger: "測試完成，準備部署"

@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+
+{% block title %}AI聊天 - 多AI協作開發平台{% endblock %}
+
+{% block content %}
+<div class="grid grid-2">
+    <!-- AI配置面板 -->
+    <div class="card">
+        <h2>AI配置</h2>
+        
+        <form id="ai-config-form">
+            <div class="form-group">
+                <label for="provider">AI供應商</label>
+                <select id="provider" name="provider" onchange="updateModels()">
+                    {% for provider_key, provider_data in available_providers.items() %}
+                    <option value="{{ provider_key }}" 
+                            {% if current_config.provider == provider_key %}selected{% endif %}>
+                        {{ provider_data.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="model">模型</label>
+                <select id="model" name="model">
+                    <!-- 動態更新 -->
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="role">專業角色</label>
+                <select id="role" name="role" onchange="updateRoleInfo()">
+                    <optgroup label="程式開發角色">
+                        {% for role_key, role_data in available_roles.programming.items() %}
+                        <option value="{{ role_key }}" 
+                                data-type="programming"
+                                {% if current_config.role == role_key %}selected{% endif %}>
+                            {{ role_data.title }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    <optgroup label="一般助理角色">
+                        {% for role_key, role_data in available_roles.non_programming.items() %}
+                        <option value="{{ role_key }}" 
+                                data-type="non_programming"
+                                {% if current_config.role == role_key %}selected{% endif %}>
+                            {{ role_data.title }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="custom-role">自訂角色要求 (可選)</label>
+                <textarea id="custom-role" name="custom_role" placeholder="在此輸入特殊的角色要求或指示..."></textarea>
+            </div>
+            
+            <button type="button" class="btn btn-success" onclick="switchAI()">切換AI配置</button>
+        </form>
+        
+        <!-- 角色資訊顯示 -->
+        <div id="role-info" class="card" style="margin-top: 1rem; background-color: #f8f9fa;">
+            <h4>角色資訊</h4>
+            <div id="role-details">
+                <!-- 動態更新 -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 對話面板 -->
+    <div class="card">
+        <h2>AI對話</h2>
+        
+        <div id="current-ai-display" class="alert alert-info">
+            <strong>當前AI:</strong>
+            <span id="current-ai-text">
+                {{ current_config.provider }}/{{ current_config.model }}/{{ current_config.role }}
+            </span>
+        </div>
+        
+        <div id="chat-messages" style="height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; background-color: white;">
+            <div class="chat-message system">
+                <strong>系統:</strong> 歡迎使用多AI協作開發平台！請選擇適合的AI配置並開始對話。
+            </div>
+        </div>
+        
+        <form id="chat-form">
+            <div class="form-group">
+                <label for="message">訊息</label>
+                <textarea id="message" name="message" placeholder="請輸入您的問題或任務描述..." required></textarea>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <button type="submit" class="btn btn-primary" id="send-button">發送訊息</button>
+                <button type="button" class="btn btn-warning" onclick="clearChat()">清除對話</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Linus原則提醒 (僅程式類角色顯示) -->
+<div id="linus-reminder" class="card" style="background-color: #fff3cd;">
+    <h3>🔧 Linus工程哲學提醒</h3>
+    <ul>
+        <li><strong>好品味:</strong> 讓特殊情況消失，統一處理方式</li>
+        <li><strong>簡潔性:</strong> 避免不必要的複雜度，縮排不超過3層</li>
+        <li><strong>實用主義:</strong> 解決真實問題，避免過度設計</li>
+        <li><strong>Never break userspace:</strong> 保持向後相容性</li>
+    </ul>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // 全局變數
+    let availableProviders = {{ available_providers|tojson }};
+    let availableRoles = {{ available_roles|tojson }};
+    let currentConfig = {{ current_config|tojson }};
+    
+    // 初始化頁面
+    document.addEventListener('DOMContentLoaded', function() {
+        updateModels();
+        updateRoleInfo();
+        
+        // 聊天表單提交事件
+        document.getElementById('chat-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            sendMessage();
+        });
+    });
+    
+    // 更新可用模型
+    function updateModels() {
+        const provider = document.getElementById('provider').value;
+        const modelSelect = document.getElementById('model');
+        
+        modelSelect.innerHTML = '';
+        
+        if (availableProviders[provider] && availableProviders[provider].models) {
+            const models = availableProviders[provider].models;
+            for (const [modelKey, modelData] of Object.entries(models)) {
+                const option = document.createElement('option');
+                option.value = modelKey;
+                option.textContent = modelData.name;
+                option.selected = (modelKey === currentConfig.model);
+                modelSelect.appendChild(option);
+            }
+        }
+    }
+    
+    // 更新角色資訊
+    function updateRoleInfo() {
+        const roleSelect = document.getElementById('role');
+        const selectedRole = roleSelect.value;
+        const roleType = roleSelect.options[roleSelect.selectedIndex].dataset.type;
+        const roleDetails = document.getElementById('role-details');
+        const linusReminder = document.getElementById('linus-reminder');
+        
+        let roleData = null;
+        if (roleType === 'programming' && availableRoles.programming[selectedRole]) {
+            roleData = availableRoles.programming[selectedRole];
+            linusReminder.style.display = 'block';
+        } else if (roleType === 'non_programming' && availableRoles.non_programming[selectedRole]) {
+            roleData = availableRoles.non_programming[selectedRole];
+            linusReminder.style.display = 'none';
+        }
+        
+        if (roleData) {
+            roleDetails.innerHTML = `
+                <p><strong>專長領域:</strong> ${roleData.specialties.join(', ')}</p>
+                ${roleData.linus_focus ? `<p><strong>Linus原則重點:</strong> ${roleData.linus_focus}</p>` : ''}
+                ${roleData.typical_tasks ? `<p><strong>典型任務:</strong> ${roleData.typical_tasks.join(', ')}</p>` : ''}
+            `;
+        }
+    }
+    
+    // 切換AI配置
+    async function switchAI() {
+        const form = document.getElementById('ai-config-form');
+        const formData = new FormData(form);
+        
+        const newConfig = {
+            provider: formData.get('provider'),
+            model: formData.get('model'),
+            role: formData.get('role')
+        };
+        
+        const customRole = formData.get('custom_role');
+        const handoverContext = customRole ? `自訂要求: ${customRole}` : null;
+        
+        try {
+            const result = await apiCall('/api/switch-ai', {
+                method: 'POST',
+                body: JSON.stringify({
+                    ai_config: newConfig,
+                    handover_context: handoverContext
+                })
+            });
+            
+            currentConfig = newConfig;
+            
+            // 更新顯示
+            document.getElementById('current-ai-text').textContent = 
+                `${newConfig.provider}/${newConfig.model}/${newConfig.role}`;
+            
+            // 添加系統訊息
+            addChatMessage('system', `已切換到 ${newConfig.provider}/${newConfig.role}`);
+            
+            showAlert('AI配置切換成功！', 'success');
+            
+        } catch (error) {
+            showAlert(`切換失敗: ${error.message}`, 'error');
+        }
+    }
+    
+    // 發送訊息
+    async function sendMessage() {
+        const messageInput = document.getElementById('message');
+        const message = messageInput.value.trim();
+        const sendButton = document.getElementById('send-button');
+        
+        if (!message) return;
+        
+        // 添加使用者訊息到聊天框
+        addChatMessage('user', message);
+        messageInput.value = '';
+        
+        // 設置載入狀態
+        sendButton.dataset.originalText = sendButton.innerHTML;
+        setLoading(sendButton);
+        
+        try {
+            const customRole = document.getElementById('custom-role').value.trim();
+            
+            const result = await apiCall('/api/chat', {
+                method: 'POST',
+                body: JSON.stringify({
+                    message: message,
+                    ai_config: currentConfig,
+                    custom_role: customRole || null
+                })
+            });
+            
+            // 添加AI回應到聊天框
+            addChatMessage('ai', result.result.ai_response, currentConfig);
+            
+            // 如果有工作報告，顯示摘要
+            if (result.result.work_report) {
+                addWorkReportSummary(result.result.work_report);
+            }
+            
+            // 如果有Linus原則合規性檢查，顯示結果
+            if (result.result.linus_compliance) {
+                addLinusComplianceResult(result.result.linus_compliance);
+            }
+            
+        } catch (error) {
+            addChatMessage('system', `錯誤: ${error.message}`, null, 'error');
+        } finally {
+            setLoading(sendButton, false);
+        }
+    }
+    
+    // 添加聊天訊息
+    function addChatMessage(sender, content, aiConfig = null, type = 'normal') {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `chat-message ${sender} ${type}`;
+        
+        let senderLabel = sender;
+        if (sender === 'ai' && aiConfig) {
+            senderLabel = `${aiConfig.provider}/${aiConfig.role}`;
+        } else if (sender === 'user') {
+            senderLabel = '您';
+        } else if (sender === 'system') {
+            senderLabel = '系統';
+        }
+        
+        messageDiv.innerHTML = `
+            <div style="margin-bottom: 0.5rem;">
+                <strong>${senderLabel}:</strong>
+                <small style="color: #666; margin-left: 1rem;">${formatTimestamp(new Date().toISOString())}</small>
+            </div>
+            <div style="white-space: pre-wrap;">${content}</div>
+        `;
+        
+        // 設置樣式
+        if (sender === 'user') {
+            messageDiv.style.backgroundColor = '#e3f2fd';
+        } else if (sender === 'ai') {
+            messageDiv.style.backgroundColor = '#f1f8e9';
+        } else if (sender === 'system' && type === 'error') {
+            messageDiv.style.backgroundColor = '#ffebee';
+        }
+        
+        messageDiv.style.padding = '1rem';
+        messageDiv.style.margin = '0.5rem 0';
+        messageDiv.style.borderRadius = '4px';
+        messageDiv.style.borderLeft = '4px solid #2196f3';
+        
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // 添加工作報告摘要
+    function addWorkReportSummary(workReport) {
+        const chatMessages = document.getElementById('chat-messages');
+        const reportDiv = document.createElement('div');
+        reportDiv.className = 'work-report-summary';
+        reportDiv.style.backgroundColor = '#fff3e0';
+        reportDiv.style.border = '1px solid #ffb74d';
+        reportDiv.style.borderRadius = '4px';
+        reportDiv.style.padding = '1rem';
+        reportDiv.style.margin = '0.5rem 0';
+        
+        reportDiv.innerHTML = `
+            <h4 style="margin: 0 0 0.5rem 0; color: #f57c00;">📋 工作報告摘要</h4>
+            <p><strong>任務類型:</strong> ${workReport.task_type || '未分類'}</p>
+            <p><strong>提取方法:</strong> ${workReport.extraction_method || '未知'}</p>
+            <p><strong>信心度:</strong> ${workReport.confidence || '未知'}</p>
+            ${workReport.summary ? `<p><strong>摘要:</strong> ${workReport.summary}</p>` : ''}
+        `;
+        
+        chatMessages.appendChild(reportDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // 添加Linus原則合規性結果
+    function addLinusComplianceResult(compliance) {
+        const chatMessages = document.getElementById('chat-messages');
+        const complianceDiv = document.createElement('div');
+        complianceDiv.className = 'linus-compliance';
+        complianceDiv.style.backgroundColor = '#e8f5e8';
+        complianceDiv.style.border = '1px solid #4caf50';
+        complianceDiv.style.borderRadius = '4px';
+        complianceDiv.style.padding = '1rem';
+        complianceDiv.style.margin = '0.5rem 0';
+        
+        complianceDiv.innerHTML = `
+            <h4 style="margin: 0 0 0.5rem 0; color: #2e7d32;">🔧 Linus原則合規性</h4>
+            <p><strong>檢查狀態:</strong> ${compliance.checked ? '已檢查' : '未檢查'}</p>
+            <p><strong>評分:</strong> ${compliance.score || '未評分'}</p>
+            <p><strong>檢查方法:</strong> ${compliance.method || '基本檢查'}</p>
+        `;
+        
+        chatMessages.appendChild(complianceDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // 清除對話
+    function clearChat() {
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.innerHTML = `
+            <div class="chat-message system">
+                <strong>系統:</strong> 對話已清除，可以開始新的對話。
+            </div>
+        `;
+    }
+</script>
+
+<style>
+    .chat-message {
+        margin-bottom: 1rem;
+    }
+    
+    .chat-message.user {
+        text-align: right;
+    }
+    
+    .chat-message.system {
+        font-style: italic;
+        opacity: 0.8;
+    }
+    
+    #linus-reminder {
+        border-left: 4px solid #f39c12;
+    }
+    
+    #linus-reminder ul {
+        margin-left: 1rem;
+    }
+    
+    #linus-reminder li {
+        margin-bottom: 0.5rem;
+    }
+</style>
+{% endblock %}

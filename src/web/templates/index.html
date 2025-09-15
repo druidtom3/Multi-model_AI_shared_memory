@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}主頁 - 多AI協作開發平台{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>平台狀態概覽</h2>
+    
+    <div class="grid grid-2">
+        <!-- 系統狀態 -->
+        <div>
+            <h3>系統狀態</h3>
+            <p><strong>專案路徑:</strong> {{ status.project_path }}</p>
+            <p><strong>會話ID:</strong> {{ status.session_id }}</p>
+            <p><strong>最後更新:</strong> {{ status.timestamp }}</p>
+            
+            {% if status.current_ai_config %}
+            <h4>當前AI配置</h4>
+            <ul>
+                <li><strong>供應商:</strong> {{ status.current_ai_config.provider }}</li>
+                <li><strong>模型:</strong> {{ status.current_ai_config.model }}</li>
+                <li><strong>角色:</strong> {{ status.current_ai_config.role }}</li>
+            </ul>
+            {% else %}
+            <p><em>尚未選擇AI配置</em></p>
+            {% endif %}
+        </div>
+        
+        <!-- 子系統狀態 -->
+        <div>
+            <h3>子系統狀態</h3>
+            <ul>
+                {% for system, status_ok in status.subsystems_status.items() %}
+                <li>
+                    <strong>{{ system }}:</strong>
+                    {% if status_ok %}
+                        <span class="status status-success">正常</span>
+                    {% else %}
+                        <span class="status status-error">未啟用</span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    
+    {% if status.recent_activity %}
+    <div style="margin-top: 2rem;">
+        <h3>最近活動摘要</h3>
+        <p><strong>總事件數:</strong> {{ status.recent_activity.total_events }}</p>
+        
+        {% if status.recent_activity.event_types %}
+        <h4>事件類型統計</h4>
+        <ul>
+            {% for event_type, count in status.recent_activity.event_types.items() %}
+            <li><strong>{{ event_type }}:</strong> {{ count }} 次</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- API金鑰狀態 -->
+<div class="card">
+    <h2>API金鑰狀態</h2>
+    
+    {% if api_status %}
+    <div class="grid grid-2">
+        {% for provider, is_configured in api_status.items() %}
+        <div>
+            <h4>{{ provider|title }}</h4>
+            {% if is_configured %}
+                <span class="status status-success">已配置</span>
+                <button class="btn btn-primary" onclick="testConnection('{{ provider }}')">測試連接</button>
+            {% else %}
+                <span class="status status-error">未配置</span>
+                <p style="font-size: 0.9rem; color: #666; margin-top: 0.5rem;">
+                    請在 .env 檔案中設置 {{ provider|upper }}_API_KEY
+                </p>
+            {% endif %}
+            <div id="test-result-{{ provider }}" class="hidden" style="margin-top: 1rem;"></div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="alert alert-warning">無法檢查API金鑰狀態，請確認系統配置。</p>
+    {% endif %}
+</div>
+
+<!-- 最近事件 -->
+<div class="card">
+    <h2>最近事件</h2>
+    
+    {% if recent_events %}
+    <div style="max-height: 400px; overflow-y: auto;">
+        {% for event in recent_events %}
+        <div style="border-bottom: 1px solid #eee; padding: 1rem 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>{{ event.summary or event.type }}</strong>
+                    <span class="status status-info">{{ event.type }}</span>
+                </div>
+                <small style="color: #666;">{{ event.timestamp }}</small>
+            </div>
+            
+            {% if event.ai_config %}
+            <p style="font-size: 0.9rem; color: #666; margin-top: 0.5rem;">
+                AI: {{ event.ai_config.provider }}/{{ event.ai_config.role }}
+            </p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div style="text-align: center; margin-top: 1rem;">
+        <a href="{{ url_for('events_page') }}" class="btn btn-primary">查看所有事件</a>
+    </div>
+    {% else %}
+    <p style="text-align: center; color: #666; padding: 2rem;">
+        尚無事件記錄
+    </p>
+    {% endif %}
+</div>
+
+<!-- 快速開始 -->
+<div class="card">
+    <h2>快速開始</h2>
+    
+    <div class="grid grid-3">
+        <div style="text-align: center;">
+            <h4>開始對話</h4>
+            <p style="color: #666; margin-bottom: 1rem;">與AI進行協作開發對話</p>
+            <a href="{{ url_for('chat') }}" class="btn btn-primary">前往聊天</a>
+        </div>
+        
+        <div style="text-align: center;">
+            <h4>查看歷史</h4>
+            <p style="color: #666; margin-bottom: 1rem;">檢視專案開發歷史和事件</p>
+            <a href="{{ url_for('events_page') }}" class="btn btn-primary">事件歷史</a>
+        </div>
+        
+        <div style="text-align: center;">
+            <h4>系統設定</h4>
+            <p style="color: #666; margin-bottom: 1rem;">配置AI供應商和預設設定</p>
+            <a href="{{ url_for('settings_page') }}" class="btn btn-primary">前往設定</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // 測試API連接
+    async function testConnection(provider) {
+        const button = event.target;
+        const resultDiv = document.getElementById(`test-result-${provider}`);
+        
+        // 設置載入狀態
+        button.dataset.originalText = button.innerHTML;
+        setLoading(button);
+        resultDiv.classList.add('hidden');
+        
+        try {
+            const result = await apiCall('/api/test-connection', {
+                method: 'POST',
+                body: JSON.stringify({ provider })
+            });
+            
+            if (result.result.status === 'success') {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>連接成功!</strong><br>
+                        響應時間: ${result.result.response_time}秒<br>
+                        測試回應: ${result.result.test_response}
+                    </div>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>連接失敗:</strong><br>
+                        ${result.result.error}
+                    </div>
+                `;
+            }
+            
+            resultDiv.classList.remove('hidden');
+            
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <strong>測試失敗:</strong><br>
+                    ${error.message}
+                </div>
+            `;
+            resultDiv.classList.remove('hidden');
+            
+        } finally {
+            setLoading(button, false);
+        }
+    }
+    
+    // 頁面載入完成後自動重新載入狀態
+    document.addEventListener('DOMContentLoaded', function() {
+        // 每30秒自動重新載入狀態
+        setInterval(async function() {
+            try {
+                const result = await apiCall('/api/project-status');
+                // 可以在這裡更新頁面狀態
+                console.log('狀態已更新:', result.status);
+            } catch (error) {
+                console.error('狀態更新失敗:', error);
+            }
+        }, 30000);
+    });
+</script>
+{% endblock %}

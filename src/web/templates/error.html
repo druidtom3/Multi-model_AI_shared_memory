@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}錯誤 - 多AI協作開發平台{% endblock %}
+
+{% block content %}
+<div class="card" style="text-align: center;">
+    <h2 style="color: #e74c3c;">
+        {% if error_code %}
+            錯誤 {{ error_code }}
+        {% else %}
+            系統錯誤
+        {% endif %}
+    </h2>
+    
+    <div style="font-size: 4rem; margin: 2rem 0; opacity: 0.3;">
+        {% if error_code == 404 %}
+            🔍
+        {% elif error_code == 500 %}
+            ⚠️
+        {% else %}
+            ❌
+        {% endif %}
+    </div>
+    
+    <div class="alert alert-error" style="text-align: left; margin: 2rem 0;">
+        <h3>錯誤詳情</h3>
+        <p>{{ error }}</p>
+        
+        {% if error_code == 404 %}
+        <p><strong>可能原因：</strong></p>
+        <ul>
+            <li>網址輸入錯誤</li>
+            <li>頁面已被移動或刪除</li>
+            <li>權限不足</li>
+        </ul>
+        {% elif error_code == 500 %}
+        <p><strong>可能原因：</strong></p>
+        <ul>
+            <li>系統配置問題</li>
+            <li>API金鑰未設置或無效</li>
+            <li>資料庫連接問題</li>
+            <li>檔案權限問題</li>
+        </ul>
+        {% endif %}
+    </div>
+    
+    <div style="margin-top: 2rem;">
+        <h3>解決建議</h3>
+        
+        {% if error_code == 404 %}
+        <p>請檢查網址是否正確，或使用導航選單返回有效頁面。</p>
+        {% elif error_code == 500 %}
+        <div class="alert alert-info" style="text-align: left;">
+            <h4>檢查清單</h4>
+            <ol>
+                <li><strong>API金鑰設置：</strong> 確認 .env 檔案中的API金鑰已正確設置</li>
+                <li><strong>檔案權限：</strong> 確認 data/ 和 workspace/ 目錄具有讀寫權限</li>
+                <li><strong>依賴套件：</strong> 確認已安裝所有必要的Python套件</li>
+                <li><strong>網路連接：</strong> 確認可以正常訪問AI服務提供商的API</li>
+            </ol>
+        </div>
+        {% else %}
+        <p>請嘗試重新載入頁面，如果問題持續存在，請聯繫系統管理員。</p>
+        {% endif %}
+    </div>
+    
+    <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center;">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">返回主頁</a>
+        <button onclick="history.back()" class="btn btn-warning">返回上一頁</button>
+        <button onclick="location.reload()" class="btn btn-success">重新載入</button>
+    </div>
+    
+    {% if error_code == 500 %}
+    <div style="margin-top: 2rem;">
+        <details style="text-align: left; background-color: #f8f9fa; padding: 1rem; border-radius: 4px;">
+            <summary style="cursor: pointer; font-weight: bold;">技術資訊 (點擊展開)</summary>
+            <div style="margin-top: 1rem; font-family: monospace; font-size: 0.9rem;">
+                <p><strong>時間戳：</strong> {{ moment().format('YYYY-MM-DD HH:mm:ss') }}</p>
+                <p><strong>請求路徑：</strong> {{ request.path }}</p>
+                <p><strong>請求方法：</strong> {{ request.method }}</p>
+                <p><strong>使用者代理：</strong> {{ request.headers.get('User-Agent', 'Unknown') }}</p>
+                <p><strong>錯誤訊息：</strong> {{ error }}</p>
+            </div>
+        </details>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 系統健康檢查 -->
+{% if error_code == 500 %}
+<div class="card">
+    <h3>系統狀態檢查</h3>
+    <div id="health-check">
+        <p>正在檢查系統狀態...</p>
+        <div class="loading"></div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if error_code == 500 %}
+<script>
+    // 執行系統健康檢查
+    document.addEventListener('DOMContentLoaded', async function() {
+        const healthCheckDiv = document.getElementById('health-check');
+        
+        if (!healthCheckDiv) return;
+        
+        try {
+            const response = await fetch('/api/project-status');
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.success) {
+                    healthCheckDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <h4>系統基本功能正常</h4>
+                            <p>核心服務正在運行，錯誤可能是暫時性的。</p>
+                        </div>
+                        <details style="margin-top: 1rem;">
+                            <summary>詳細狀態</summary>
+                            <pre style="background-color: #f8f9fa; padding: 1rem; border-radius: 4px; margin-top: 1rem; overflow: auto;">${JSON.stringify(data.status, null, 2)}</pre>
+                        </details>
+                    `;
+                } else {
+                    healthCheckDiv.innerHTML = `
+                        <div class="alert alert-error">
+                            <h4>系統狀態異常</h4>
+                            <p>檢測到系統問題：${data.error}</p>
+                        </div>
+                    `;
+                }
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            healthCheckDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <h4>無法連接到系統核心</h4>
+                    <p>系統核心服務可能未啟動或配置有誤。</p>
+                    <p><strong>技術詳情：</strong> ${error.message}</p>
+                </div>
+                <div class="alert alert-info" style="margin-top: 1rem;">
+                    <h4>建議處理步驟</h4>
+                    <ol>
+                        <li>檢查 .env 檔案中的設定</li>
+                        <li>確認所有依賴套件已安裝：<code>pip install -r requirements.txt</code></li>
+                        <li>檢查 data/ 目錄是否存在且有寫入權限</li>
+                        <li>重新啟動應用程式</li>
+                    </ol>
+                </div>
+            `;
+        }
+    });
+</script>
+{% endif %}
+
+<!-- 錯誤回報功能 -->
+<script>
+    function reportError() {
+        const errorDetails = {
+            error: "{{ error }}",
+            error_code: {{ error_code or 'null' }},
+            timestamp: new Date().toISOString(),
+            url: window.location.href,
+            user_agent: navigator.userAgent
+        };
+        
+        // 這裡可以實作錯誤回報功能
+        console.log('錯誤詳情:', errorDetails);
+        
+        // 複製錯誤資訊到剪貼簿
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(JSON.stringify(errorDetails, null, 2))
+                .then(() => showAlert('錯誤資訊已複製到剪貼簿', 'success'))
+                .catch(() => showAlert('複製失敗', 'error'));
+        }
+    }
+</script>
+
+<style>
+    .alert h4 {
+        margin-bottom: 0.5rem;
+    }
+    
+    .alert ol, .alert ul {
+        margin-left: 1.5rem;
+        margin-top: 0.5rem;
+    }
+    
+    .alert li {
+        margin-bottom: 0.25rem;
+    }
+    
+    code {
+        background-color: #f1f3f4;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-family: monospace;
+    }
+    
+    details summary {
+        margin-bottom: 0.5rem;
+    }
+    
+    details[open] summary {
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
