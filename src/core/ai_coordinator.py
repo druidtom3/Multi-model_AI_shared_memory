@@ -14,6 +14,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
+from ..ai_services.report_extractor import ReportExtractor
+
 
 class AICoordinator:
     """
@@ -40,6 +42,7 @@ class AICoordinator:
         self.role_system = None  # 延遲初始化
         self.event_recorder = None  # 延遲初始化
         self.api_clients = None  # 延遲初始化
+        self.report_extractor: Optional[ReportExtractor] = None
         
         # 當前會話狀態
         self.current_ai_config = None
@@ -47,7 +50,14 @@ class AICoordinator:
         
         # 設置日誌
         self._setup_logging()
-        
+
+        # 初始化工作報告解析器（若失敗會在使用時降級處理）
+        try:
+            self.report_extractor = ReportExtractor()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"ReportExtractor initialization failed: {exc}")
+            self.report_extractor = None
+
         logger.info(f"AICoordinator initialized for project: {self.project_path}")
     
     def _ensure_directories(self):
@@ -226,24 +236,75 @@ class AICoordinator:
         ]
         return role in programming_roles
     
-    async def _extract_work_report(self, user_message: str, ai_response: str, 
+    async def _extract_work_report(self, user_message: str, ai_response: str,
                                  ai_config: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        """提取結構化工作報告（簡化版本）"""
-        # 這裡實作簡單的關鍵詞提取，後續會被report_extractor取代
+        """提取結構化工作報告，整合ReportExtractor並具備降級機制"""
+        # 確保解析器可用，若無法初始化則提供基本回報
+        if self.report_extractor is None:
+            try:
+                self.report_extractor = ReportExtractor()
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Unable to initialize ReportExtractor: {exc}")
+                summary = ai_response[:200] + '...' if len(ai_response) > 200 else ai_response
+                return {
+                    'summary': summary or 'AI回應不可用',
+                    'tasks': [],
+                    'next_steps': [],
+                    'blockers': [],
+                    'decisions': [],
+                    'references': [],
+                    'notes': [],
+                    'task_type': self._detect_task_type(ai_response),
+                    'user_request': user_message[:200] if user_message else '',
+                    'source': 'legacy_fallback',
+                    'metadata': {
+                        'confidence': 'low',
+                        'extraction_method': 'legacy_basic',
+                        'notes': f'ReportExtractor init failed: {exc}',
+                    }
+                }
+
         try:
-            # 簡單的關鍵詞檢測
-            report = {
-                'task_type': self._detect_task_type(ai_response),
-                'summary': ai_response[:200] + '...' if len(ai_response) > 200 else ai_response,
-                'extraction_method': 'simple_keyword',
-                'confidence': 'low'
+            report = self.report_extractor.extract_work_report(
+                user_message=user_message,
+                ai_response=ai_response,
+                ai_config=ai_config,
+            )
+            if isinstance(report, dict):
+                return report
+            logger.warning(
+                "ReportExtractor returned unexpected type: %s", type(report)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Error extracting work report via ReportExtractor: {exc}")
+            try:
+                return self.report_extractor.fallback_extraction(
+                    user_message=user_message,
+                    ai_response=ai_response,
+                    ai_config=ai_config,
+                    reason=f"error:{exc}",
+                )
+            except Exception as fallback_exc:  # noqa: BLE001
+                logger.error(f"Fallback extraction failed: {fallback_exc}")
+
+        summary = ai_response[:200] + '...' if len(ai_response) > 200 else ai_response
+        return {
+            'summary': summary or 'AI回應不可用',
+            'tasks': [],
+            'next_steps': [],
+            'blockers': [],
+            'decisions': [],
+            'references': [],
+            'notes': [],
+            'task_type': self._detect_task_type(ai_response),
+            'user_request': user_message[:200] if user_message else '',
+            'source': 'legacy_fallback',
+            'metadata': {
+                'confidence': 'low',
+                'extraction_method': 'legacy_basic',
+                'notes': 'ReportExtractor returned invalid result',
             }
-            
-            return report
-            
-        except Exception as e:
-            logger.error(f"Error extracting work report: {str(e)}")
-            return None
+        }
     
     def _detect_task_type(self, response: str) -> str:
         """簡單的任務類型檢測"""
