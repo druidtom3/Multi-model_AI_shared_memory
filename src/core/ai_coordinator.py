@@ -88,15 +88,10 @@ class AICoordinator:
             except ImportError:
                 logger.warning("RoleSystem not available, using basic mode")
                 self.role_system = None
-        
+
         if self.event_recorder is None:
-            try:
-                from .event_recorder import EventRecorder
-                self.event_recorder = EventRecorder(self.data_path)
-            except ImportError:
-                logger.warning("EventRecorder not available, events won't be persisted")
-                self.event_recorder = None
-        
+            self.ensure_event_recorder()
+
         if self.api_clients is None:
             try:
                 from ..ai_services.api_clients import AIAPIClients
@@ -104,6 +99,24 @@ class AICoordinator:
             except ImportError:
                 logger.error("AI API clients not available")
                 self.api_clients = None
+
+    def ensure_event_recorder(self) -> Optional["EventRecorder"]:
+        """確保事件記錄器可用，若不存在則初始化"""
+        if self.event_recorder is not None:
+            return self.event_recorder
+
+        try:
+            from .event_recorder import EventRecorder
+
+            self.event_recorder = EventRecorder(self.data_path)
+        except ImportError:
+            logger.warning("EventRecorder not available, events won't be persisted")
+            self.event_recorder = None
+        except Exception as exc:
+            logger.error(f"Failed to initialize EventRecorder: {str(exc)}")
+            self.event_recorder = None
+
+        return self.event_recorder
     
     async def chat_with_ai(self, ai_config: Dict[str, str], message: str, 
                           custom_role: str = None) -> Dict[str, Any]:
