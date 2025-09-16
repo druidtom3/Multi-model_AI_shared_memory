@@ -18,6 +18,16 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+def is_flask_reloader_process() -> bool:
+    """判斷當前是否由Flask自動重載器啟動的子進程"""
+
+    reloader_flag = os.environ.get("WERKZEUG_RUN_MAIN")
+    if not reloader_flag:
+        return False
+
+    return reloader_flag.lower() == "true"
+
 def check_python_version():
     """檢查Python版本"""
     if sys.version_info < (3, 8):
@@ -218,41 +228,47 @@ def start_application():
 
 def main():
     """主函數"""
-    print("多AI協作開發平台")
-    print("基於Linus工程哲學的簡潔AI協作平台\n")
-    
+    reloader_process = is_flask_reloader_process()
+
+    if not reloader_process:
+        print("多AI協作開發平台")
+        print("基於Linus工程哲學的簡潔AI協作平台\n")
+
     try:
-        # 執行系統檢查
-        if not run_system_checks():
-            print("\n[ERROR] 系統檢查失敗，無法啟動")
-            print("請根據上述錯誤訊息進行修正")
-            sys.exit(1)
-        
-        print("\n[SUCCESS] 系統檢查完成，準備啟動...")
-        
-        # 顯示啟動資訊
-        host = os.getenv('WEB_HOST', '127.0.0.1')
-        port = os.getenv('WEB_PORT', '5000')
-        
-        print(f"\n[WEB] Web界面將在以下地址啟動:")
-        print(f"   http://{host}:{port}")
-        print(f"\n[INFO] 使用說明:")
-        print(f"   1. 在瀏覽器中訪問上述地址")
-        print(f"   2. 在「AI聊天」頁面選擇AI配置")
-        print(f"   3. 開始與AI協作開發")
-        print(f"\n[TIPS] Linus原則提醒:")
-        print(f"   - 保持設計簡潔")
-        print(f"   - 消除特殊情況") 
-        print(f"   - 解決真實問題")
-        print(f"   - 維持向後相容")
-        
-        print(f"\n[START] 正在啟動...")
-        print("=" * 50)
-        
+        if not reloader_process:
+            # 執行系統檢查
+            if not run_system_checks():
+                print("\n[ERROR] 系統檢查失敗，無法啟動")
+                print("請根據上述錯誤訊息進行修正")
+                sys.exit(1)
+
+            print("\n[SUCCESS] 系統檢查完成，準備啟動...")
+
+            # 顯示啟動資訊
+            host = os.getenv('WEB_HOST', '127.0.0.1')
+            port = os.getenv('WEB_PORT', '5000')
+
+            print(f"\n[WEB] Web界面將在以下地址啟動:")
+            print(f"   http://{host}:{port}")
+            print(f"\n[INFO] 使用說明:")
+            print(f"   1. 在瀏覽器中訪問上述地址")
+            print(f"   2. 在「AI聊天」頁面選擇AI配置")
+            print(f"   3. 開始與AI協作開發")
+            print(f"\n[TIPS] Linus原則提醒:")
+            print(f"   - 保持設計簡潔")
+            print(f"   - 消除特殊情況")
+            print(f"   - 解決真實問題")
+            print(f"   - 維持向後相容")
+
+            print(f"\n[START] 正在啟動...")
+            print("=" * 50)
+        else:
+            logger.info("Detected Flask reloader process; skipping startup checks and banner output.")
+
         # 啟動應用
         if not start_application():
             sys.exit(1)
-            
+
     except Exception as e:
         logger.error(f"啟動腳本執行錯誤: {e}")
         sys.exit(1)
