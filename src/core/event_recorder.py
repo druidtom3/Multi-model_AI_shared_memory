@@ -9,6 +9,9 @@
 
 import json
 import logging
+import os
+import shutil
+import tempfile
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -110,20 +113,43 @@ class EventRecorder:
         """寫入事件檔案"""
         try:
             with self._file_lock:
-                # 備份現有檔案（如果存在）
+                temp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        'w',
+                        encoding='utf-8',
+                        delete=False,
+                        dir=self.events_file.parent
+                    ) as temp_file:
+                        temp_path = Path(temp_file.name)
+                        json.dump(data, temp_file, ensure_ascii=False, indent=2)
+                        temp_file.flush()
+                        os.fsync(temp_file.fileno())
+                except Exception:
+                    if temp_path and temp_path.exists():
+                        try:
+                            temp_path.unlink()
+                        except OSError:
+                            pass
+                    raise
+
                 if self.events_file.exists():
                     backup_name = f"project_events_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                     backup_path = self.backup_dir / backup_name
-                    self.events_file.rename(backup_path)
-                
-                # 寫入新資料
-                with open(self.events_file, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                
+                    try:
+                        shutil.copy2(self.events_file, backup_path)
+                    except Exception as backup_error:
+                        logger.warning(
+                            f"Failed to create backup before updating events file: {backup_error}"
+                        )
+
+                if temp_path is not None:
+                    temp_path.replace(self.events_file)
+
                 # 清除快取
                 with self._cache_lock:
                     self._events_cache = None
-                    
+
         except Exception as e:
             logger.error(f"Error writing events file: {str(e)}")
             raise

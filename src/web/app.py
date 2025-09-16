@@ -154,22 +154,15 @@ def api_chat():
             return jsonify({'error': 'No AI configuration specified'}), 400
         
         # 使用異步調用AI
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            result = loop.run_until_complete(
-                ai_coordinator.chat_with_ai(ai_config, message, custom_role)
-            )
-            
-            return jsonify({
-                'success': True,
-                'result': result,
-                'timestamp': datetime.now().isoformat()
-            })
-            
-        finally:
-            loop.close()
+        result = asyncio.run(
+            ai_coordinator.chat_with_ai(ai_config, message, custom_role)
+        )
+
+        return jsonify({
+            'success': True,
+            'result': result,
+            'timestamp': datetime.now().isoformat()
+        })
         
     except Exception as e:
         logger.error(f"Error in chat API: {str(e)}")
@@ -269,22 +262,15 @@ def api_test_connection():
             return jsonify({'error': 'API clients not initialized'}), 500
         
         # 使用異步測試連接
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            result = loop.run_until_complete(
-                ai_coordinator.api_clients.test_connection(provider)
-            )
-            
-            return jsonify({
-                'success': True,
-                'result': result,
-                'timestamp': datetime.now().isoformat()
-            })
-            
-        finally:
-            loop.close()
+        result = asyncio.run(
+            ai_coordinator.api_clients.test_connection(provider)
+        )
+
+        return jsonify({
+            'success': True,
+            'result': result,
+            'timestamp': datetime.now().isoformat()
+        })
         
     except Exception as e:
         logger.error(f"Error testing connection: {str(e)}")

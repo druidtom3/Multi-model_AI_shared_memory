@@ -14,6 +14,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from werkzeug.serving import is_running_from_reloader
+
 # 設置基本日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -22,11 +24,11 @@ logger = logging.getLogger(__name__)
 def is_flask_reloader_process() -> bool:
     """判斷當前是否由Flask自動重載器啟動的子進程"""
 
-    reloader_flag = os.environ.get("WERKZEUG_RUN_MAIN")
-    if not reloader_flag:
-        return False
-
-    return reloader_flag.lower() == "true"
+    try:
+        return is_running_from_reloader()
+    except Exception:
+        reloader_flag = os.environ.get("WERKZEUG_RUN_MAIN")
+        return bool(reloader_flag and reloader_flag.lower() != "false")
 
 def check_python_version():
     """檢查Python版本"""
