@@ -32,8 +32,8 @@ def check_dependencies():
         'flask',
         'requests', 
         'aiohttp',
-        'pyyaml',
-        'python-dotenv'
+        'yaml',
+        'dotenv'
     ]
     
     missing_packages = []
@@ -179,10 +179,10 @@ def run_system_checks():
     for check_name, check_func in checks:
         logger.info(f"檢查 {check_name}...")
         if not check_func():
-            logger.error(f"❌ {check_name} 檢查失敗")
+            logger.error(f"[FAILED] {check_name} 檢查失敗")
             return False
         else:
-            logger.info(f"✅ {check_name} 檢查通過")
+            logger.info(f"[PASSED] {check_name} 檢查通過")
     
     logger.info("=== 所有檢查都通過！ ===")
     return True
@@ -218,35 +218,35 @@ def start_application():
 
 def main():
     """主函數"""
-    print("🚀 多AI協作開發平台")
+    print("多AI協作開發平台")
     print("基於Linus工程哲學的簡潔AI協作平台\n")
     
     try:
         # 執行系統檢查
         if not run_system_checks():
-            print("\n❌ 系統檢查失敗，無法啟動")
+            print("\n[ERROR] 系統檢查失敗，無法啟動")
             print("請根據上述錯誤訊息進行修正")
             sys.exit(1)
         
-        print("\n🎉 系統檢查完成，準備啟動...")
+        print("\n[SUCCESS] 系統檢查完成，準備啟動...")
         
         # 顯示啟動資訊
         host = os.getenv('WEB_HOST', '127.0.0.1')
         port = os.getenv('WEB_PORT', '5000')
         
-        print(f"\n📡 Web界面將在以下地址啟動:")
+        print(f"\n[WEB] Web界面將在以下地址啟動:")
         print(f"   http://{host}:{port}")
-        print(f"\n💡 使用說明:")
+        print(f"\n[INFO] 使用說明:")
         print(f"   1. 在瀏覽器中訪問上述地址")
         print(f"   2. 在「AI聊天」頁面選擇AI配置")
         print(f"   3. 開始與AI協作開發")
-        print(f"\n🔧 Linus原則提醒:")
+        print(f"\n[TIPS] Linus原則提醒:")
         print(f"   - 保持設計簡潔")
         print(f"   - 消除特殊情況") 
         print(f"   - 解決真實問題")
         print(f"   - 維持向後相容")
         
-        print(f"\n🚀 正在啟動...")
+        print(f"\n[START] 正在啟動...")
         print("=" * 50)
         
         # 啟動應用

@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
-from ..ai_services.report_extractor import ReportExtractor
+from ai_services.report_extractor import ReportExtractor
 
 
 class AICoordinator:

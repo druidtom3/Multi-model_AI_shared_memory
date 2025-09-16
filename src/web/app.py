@@ -74,10 +74,8 @@ def init_app():
 
     logger.info("Flask app initialized")
 
-@app.before_first_request
-def setup():
-    """應用首次請求前的設置"""
-    init_app()
+# 在 Flask 應用創建時直接初始化
+init_app()
 
 @app.route('/')
 def index():
